@@ -284,7 +284,15 @@ async function holderNameLookup(e) {
       if (!isPin(pin)) return toast("Enter your 4-digit PIN.", "error");
       setBusy(ev.submitter, true, "Signing in…");
       try {
-        await signInWithEmailAndPassword(auth, access.authEmail, holderPassword(hash, pin));
+        const cred = await signInWithEmailAndPassword(auth, access.authEmail, holderPassword(hash, pin));
+        const [p, o] = await Promise.all([
+          getDoc(doc(db, "users", cred.user.uid)),
+          getDoc(doc(db, "badgeOwners", cred.user.uid))
+        ]);
+        session.user = cred.user;
+        session.profile = p.exists() ? p.data() : null;
+        session.owner = o.exists() ? o.data() : null;
+        refreshNav();
         location.hash = "#/my-badge";
       } catch (err) {
         toast("That PIN was not accepted.", "error");
@@ -327,6 +335,14 @@ async function claimHolder(e, name, hash, access) {
       claimed:true, ownerUid:cred.user.uid, claimedAt:serverTimestamp()
     });
     await batch.commit();
+    session.user = cred.user;
+    session.profile = { displayName:name, role:"holder" };
+    session.owner = {
+      badgeId:access.badgeId,
+      credentialToken:access.credentialToken,
+      nameHash:hash
+    };
+    refreshNav();
     location.hash = "#/my-badge";
   } catch (err) {
     console.error(err);
@@ -362,6 +378,9 @@ function renderAdminLogin() {
         await signOut(auth);
         throw new Error("This account is not an administrator.");
       }
+      session.user = cred.user;
+      session.profile = p.data();
+      refreshNav();
       location.hash = "#/admin";
     } catch (err) {
       toast("Administrator name or PIN was not accepted.", "error");
