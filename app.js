@@ -404,10 +404,10 @@ async function bootstrapAdmin(e) {
     created = cred.user;
     const batch = writeBatch(db);
     batch.set(doc(db, "users", cred.user.uid), {
-      displayName:name, role:"admin", nameHash:hash, setupCode, createdAt:serverTimestamp()
+      displayName:name, role:"admin", nameHash:hash, setupCodeHash, createdAt:serverTimestamp()
     });
     batch.set(doc(db, "system", "bootstrap"), {
-      ownerUid:cred.user.uid, initializedAt:serverTimestamp(), setupCode
+      ownerUid:cred.user.uid, initializedAt:serverTimestamp(), setupCodeHash
     });
     await batch.commit();
     await updateDoc(doc(db, "users", cred.user.uid), { setupCode:deleteField() });
