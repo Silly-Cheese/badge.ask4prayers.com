@@ -1,0 +1,119 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userDoc().data.role == "admin";
+    }
+
+    match /system/{docId} {
+      allow get, list: if isAdmin();
+
+      allow create: if docId == "bootstrap"
+        && signedIn()
+        && !exists(/databases/$(database)/documents/system/bootstrap)
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.setupCodeHash == "be03b9d3bd03a138cb3435a0fbfac040d53c7021508e002f1eb8c36cee38941e"
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin"
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.setupCodeHash == "be03b9d3bd03a138cb3435a0fbfac040d53c7021508e002f1eb8c36cee38941e";
+
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /users/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && (
+          (
+            request.resource.data.role == "holder"
+            && getAfter(/databases/$(database)/documents/badgeOwners/$(uid)).data.badgeId is string
+          )
+          ||
+          (
+            request.resource.data.role == "admin"
+            && !exists(/databases/$(database)/documents/system/bootstrap)
+            && request.resource.data.setupCodeHash == "be03b9d3bd03a138cb3435a0fbfac040d53c7021508e002f1eb8c36cee38941e"
+            && getAfter(/databases/$(database)/documents/system/bootstrap).data.ownerUid == uid
+            && getAfter(/databases/$(database)/documents/system/bootstrap).data.setupCodeHash == "be03b9d3bd03a138cb3435a0fbfac040d53c7021508e002f1eb8c36cee38941e"
+          )
+        );
+
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /badges/{badgeId} {
+      allow read, create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /publicCredentials/{credentialToken} {
+      allow get: if true;
+      allow list: if false;
+      allow create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /accessDirectory/{nameHash} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isAdmin();
+
+      allow update: if isAdmin()
+        || (
+          signedIn()
+          && resource.data.claimed == false
+          && request.auth.token.email == resource.data.authEmail
+          && request.resource.data.claimed == true
+          && request.resource.data.ownerUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(["claimed", "ownerUid", "claimedAt"])
+        );
+
+      allow delete: if false;
+    }
+
+    match /badgeOwners/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && getAfter(/databases/$(database)/documents/accessDirectory/$(request.resource.data.nameHash)).data.ownerUid == uid
+        && getAfter(/databases/$(database)/documents/accessDirectory/$(request.resource.data.nameHash)).data.badgeId == request.resource.data.badgeId
+        && getAfter(/databases/$(database)/documents/accessDirectory/$(request.resource.data.nameHash)).data.credentialToken == request.resource.data.credentialToken;
+
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /scanLogs/{scanId} {
+      allow get, list: if isAdmin();
+
+      allow create: if request.resource.data.keys().hasOnly([
+          "badgeId", "credentialToken", "fullName", "tppId", "result",
+          "source", "purpose", "scannerUid", "invalidValue", "scannedAt",
+          "userAgent"
+        ])
+        && request.resource.data.result is string
+        && request.resource.data.source is string
+        && request.resource.data.purpose is string
+        && request.resource.data.scannedAt == request.time;
+
+      allow update, delete: if false;
+    }
+  }
+}
