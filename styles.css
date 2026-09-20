@@ -370,3 +370,55 @@ body:after{
   .scan-method-grid{grid-template-columns:1fr}
   .scan-method-card{min-height:126px}
 }
+
+/* Scanner reliability states */
+.scan-method-card.is-loading{
+  border-color:rgba(216,195,165,.34)!important;
+  background:rgba(216,195,165,.08)!important;
+}
+.scan-method-card.is-loading .scan-method-icon{
+  animation:scannerPulse 1s ease-in-out infinite alternate;
+}
+.scan-method-card.is-active{
+  border-color:rgba(216,195,165,.42)!important;
+  background:rgba(216,195,165,.09)!important;
+}
+@keyframes scannerPulse{
+  from{opacity:.45;transform:scale(.96)}
+  to{opacity:1;transform:scale(1.04)}
+}
+.scanner-live-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding:14px 14px 12px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.scanner-live-head>div{display:grid;gap:3px}
+.scanner-live-head strong{color:var(--text)}
+.scanner-live-head span{color:var(--muted);font-size:.82rem}
+.scanner-stop{min-height:38px!important;padding:0 14px!important}
+#cameraReader{min-height:260px}
+#cameraReader video{
+  width:100%!important;
+  max-height:540px!important;
+  object-fit:cover!important;
+  border-radius:0 0 18px 18px!important;
+}
+#cameraReader img{max-width:100%}
+.file-reader-host{
+  position:fixed!important;
+  left:-10000px!important;
+  top:0!important;
+  width:420px!important;
+  height:420px!important;
+  overflow:hidden!important;
+  opacity:.001!important;
+  pointer-events:none!important;
+}
+@media(max-width:560px){
+  .scanner-live-head{align-items:flex-start;flex-direction:column}
+  .scanner-stop{width:100%!important}
+  #cameraReader{min-height:220px}
+}
