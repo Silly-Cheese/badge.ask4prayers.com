@@ -13,8 +13,9 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
     }
 
+    // One-time system bootstrap.
     match /system/{documentId} {
-      allow get, list: if isAdmin();
+      allow read: if isAdmin();
 
       allow create: if documentId == "bootstrap"
         && signedIn()
@@ -26,9 +27,10 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Login/profile records.
     match /users/{uid} {
-      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
-      allow list: if isAdmin();
+      allow read: if signedIn()
+        && (request.auth.uid == uid || isAdmin());
 
       allow create: if signedIn()
         && request.auth.uid == uid
@@ -46,18 +48,24 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Private badge administration records.
     match /badges/{badgeId} {
-      allow get, list, create, update: if isAdmin();
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
       allow delete: if false;
     }
 
+    // Public credential records used by QR verification.
     match /publicCredentials/{credentialToken} {
       allow get: if true;
       allow list: if false;
-      allow create, update: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
       allow delete: if false;
     }
 
+    // Exact-name lookup for holder enrollment.
     match /accessDirectory/{nameHash} {
       allow get: if true;
       allow list: if false;
@@ -70,34 +78,38 @@ service cloud.firestore {
           && request.auth.token.email == resource.data.authEmail
           && request.resource.data.claimed == true
           && request.resource.data.ownerUid == request.auth.uid
-          && request.resource.data.authEmail == resource.data.authEmail
-          && request.resource.data.badgeId == resource.data.badgeId
-          && request.resource.data.credentialToken == resource.data.credentialToken
         );
 
       allow delete: if false;
     }
 
+    // Links a signed-in holder to the badge issued to their name.
     match /badgeOwners/{uid} {
-      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
-      allow list: if isAdmin();
+      allow read: if signedIn()
+        && (request.auth.uid == uid || isAdmin());
 
       allow create: if signedIn()
-        && request.auth.uid == uid;
+        && request.auth.uid == uid
+        && get(/databases/$(database)/documents/accessDirectory/$(request.resource.data.nameHash)).data.claimed == false
+        && request.auth.token.email == get(/databases/$(database)/documents/accessDirectory/$(request.resource.data.nameHash)).data.authEmail
+        && request.resource.data.badgeId == get(/databases/$(database)/documents/accessDirectory/$(request.resource.data.nameHash)).data.badgeId
+        && request.resource.data.credentialToken == get(/databases/$(database)/documents/accessDirectory/$(request.resource.data.nameHash)).data.credentialToken;
 
       allow update: if isAdmin();
       allow delete: if false;
     }
 
+    // Verification audit trail.
     match /scanLogs/{scanId} {
-      allow get, list: if isAdmin();
+      allow read: if isAdmin();
 
-      allow create: if request.resource.data.result is string
-        && request.resource.data.source is string
-        && request.resource.data.purpose is string
-        && request.resource.data.scannedAt == request.time;
+      allow create: if request.resource.data.scannedAt == request.time
+        && request.resource.data.result != null
+        && request.resource.data.source != null
+        && request.resource.data.purpose != null;
 
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if false;
     }
   }
 }
