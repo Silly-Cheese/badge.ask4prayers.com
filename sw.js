@@ -1,5 +1,5 @@
-const CACHE = "tpp-badge-v5";
-const CORE = ["./", "./index.html", "./styles.css?v=5", "./app.js?v=5", "./manifest.webmanifest", "./icon.svg"];
+const CACHE = "tpp-badge-v6";
+const CORE = ["./", "./index.html", "./styles.css?v=6", "./app.js?v=6", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(CORE)));
