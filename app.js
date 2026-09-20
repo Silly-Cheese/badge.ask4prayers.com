@@ -36,11 +36,11 @@ window.addEventListener("beforeinstallprompt", e => {
 });
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js?v=8", { updateViaCache:"none" })
+  navigator.serviceWorker.register("./sw.js?v=9", { updateViaCache:"none" })
     .then(reg => reg.update().catch(() => {}))
     .catch(() => {});
 }
-console.info("TPP Badge System build v8");
+console.info("TPP Badge System build v9");
 
 navToggle.addEventListener("click", () => {
   const open = siteNav.classList.toggle("open");
@@ -1258,10 +1258,16 @@ async function replaceBadge(badge) {
       suspensionActive:false, suspensionCategory:null, publicSuspensionReason:null,
       suspensionReviewDate:null, internalSuspensionNotes:null, suspendedAt:null,
       suspendedBy:null, suspensionEndedAt:null, suspensionRestoredBy:null,
-      replacedBadgeId:badge.badgeId, createdBy:session.user.uid, createdAt:serverTimestamp(),
-      revokedAt:deleteField(), revokedBy:deleteField()
+      replacedBadgeId:badge.badgeId, createdBy:session.user.uid, createdAt:serverTimestamp()
     };
+
+    // A replacement is a brand-new document. Firestore deleteField() cannot be
+    // used inside set() without merge, so strip fields inherited from the old
+    // revoked badge before writing the replacement document.
     delete newPrivate.id;
+    delete newPrivate.revokedAt;
+    delete newPrivate.revokedBy;
+    delete newPrivate.replacementBadgeId;
     const newPublic = {
       badgeId:newBadgeId, credentialToken:newToken, fullName:badge.fullName, title:badge.title,
       tppId:badge.tppId, credentialType:badge.credentialType, status:"active",
