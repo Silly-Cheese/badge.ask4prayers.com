@@ -575,29 +575,39 @@ async function renderScanner() {
           <button class="scan-method-card" id="startScanner" type="button">
             <span class="scan-method-icon">⌁</span>
             <strong>Camera Scan</strong>
-            <small>Scan a badge being shown in front of you.</small>
+            <small id="cameraScanText">Scan a badge being shown in front of you.</small>
           </button>
 
           <button class="scan-method-card" id="chooseBadgeImage" type="button">
             <span class="scan-method-icon">▣</span>
             <strong>Downloaded ID</strong>
-            <small>Select a saved Prayer Project badge from Photos or Files.</small>
+            <small id="downloadScanText">Select a saved Prayer Project badge from Photos or Files.</small>
           </button>
         </div>
 
-        <input id="badgeImageInput" type="file" accept="image/*" hidden>
+        <input id="badgeImageInput" type="file" accept="image/png,image/jpeg,image/webp,image/*" hidden>
 
         <div class="scanner-box" id="scannerBox" hidden>
-          <div id="reader"></div>
+          <div class="scanner-live-head">
+            <div>
+              <strong>Live Camera</strong>
+              <span id="cameraStatus">Ready to start.</span>
+            </div>
+            <button class="btn btn-quiet scanner-stop" id="stopScanner" type="button">Stop Camera</button>
+          </div>
+          <div id="cameraReader"></div>
         </div>
+
+        <div id="fileReaderHost" class="file-reader-host" aria-hidden="true"></div>
 
         <div class="download-scan-status" id="downloadScanStatus" hidden></div>
 
-        <p class="scan-help">Downloaded badge images are read locally in your browser to find the QR code. The image itself is not uploaded or stored. Only the resulting verification event is written to the scan log.</p>
+        <p class="scan-help">Camera scanning and downloaded-image scanning happen in your browser. Downloaded badge images are not uploaded or stored; only the verification event is written to the scan log.</p>
       </div>
     </section>`;
 
   document.getElementById("startScanner").onclick = startScanner;
+  document.getElementById("stopScanner").onclick = stopLiveScanner;
   document.getElementById("chooseBadgeImage").onclick = () => {
     document.getElementById("badgeImageInput").click();
   };
@@ -625,29 +635,128 @@ async function processScannedValue(decoded, source) {
   return true;
 }
 
-async function startScanner(e) {
-  if (!window.Html5Qrcode) return toast("The camera scanner failed to load.", "error");
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+function setCameraUi(state, message) {
+  const button = document.getElementById("startScanner");
+  const text = document.getElementById("cameraScanText");
+  const status = document.getElementById("cameraStatus");
+  if (text && message) text.textContent = message;
+  if (status && message) status.textContent = message;
+  if (button) {
+    button.classList.toggle("is-loading", state === "loading");
+    button.classList.toggle("is-active", state === "active");
+    button.disabled = state === "loading" || state === "active";
+  }
+}
+
+async function stopLiveScanner() {
+  const scannerBox = document.getElementById("scannerBox");
+  try {
+    if (scanner) {
+      try { await scanner.stop(); } catch {}
+      try { scanner.clear(); } catch {}
+    }
+  } finally {
+    scanner = null;
+    if (scannerBox) scannerBox.hidden = true;
+    const reader = document.getElementById("cameraReader");
+    if (reader) reader.innerHTML = "";
+    setCameraUi("idle", "Scan a badge being shown in front of you.");
+  }
+}
+
+async function startScanner() {
+  if (!window.Html5Qrcode) {
+    toast("The QR scanner library failed to load. Refresh the page and try again.", "error");
+    return;
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices?.enumerateDevices) {
+    toast("This browser does not provide camera access to the scanner.", "error");
+    return;
+  }
+
   const scannerBox = document.getElementById("scannerBox");
   scannerBox.hidden = false;
-  setBusy(e.currentTarget, true, "Starting camera…");
+  setCameraUi("loading", "Requesting camera permission…");
+
+  let permissionStream = null;
   try {
-    scanner = new Html5Qrcode("reader");
-    await scanner.start(
-      { facingMode:"environment" },
-      { fps:10, qrbox:(w,h) => ({ width:Math.min(280,w*.78), height:Math.min(280,h*.78) }) },
-      async decoded => {
-        try { await scanner.stop(); } catch {}
-        scanner = null;
-        await processScannedValue(decoded, "camera-scanner");
-      }
+    permissionStream = await withTimeout(
+      navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" } }, audio:false }),
+      12000,
+      "Camera permission timed out."
     );
-    e.currentTarget.dataset.oldText = "Camera Scan";
-    e.currentTarget.disabled = true;
+
+    permissionStream.getTracks().forEach(track => track.stop());
+    permissionStream = null;
+
+    setCameraUi("loading", "Finding an available camera…");
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cameras = devices.filter(device => device.kind === "videoinput");
+    if (!cameras.length) throw new Error("No camera was found on this device.");
+
+    const preferred =
+      cameras.find(device => /back|rear|environment|world/i.test(device.label || "")) ||
+      cameras[0];
+
+    const reader = document.getElementById("cameraReader");
+    if (reader) reader.innerHTML = "";
+
+    scanner = new Html5Qrcode("cameraReader");
+    setCameraUi("loading", "Starting live camera…");
+
+    await withTimeout(
+      scanner.start(
+        preferred.deviceId,
+        {
+          fps:10,
+          qrbox:(w,h) => {
+            const side = Math.max(180, Math.min(300, Math.floor(Math.min(w,h) * .72)));
+            return { width:side, height:side };
+          },
+          aspectRatio:1.333334
+        },
+        async decoded => {
+          try { await scanner.stop(); } catch {}
+          try { scanner.clear(); } catch {}
+          scanner = null;
+          await processScannedValue(decoded, "camera-scanner");
+        },
+        () => {}
+      ),
+      15000,
+      "The camera did not finish starting."
+    );
+
+    setCameraUi("active", "Camera is live — hold the badge QR inside the frame.");
   } catch (err) {
-    console.error(err);
+    console.error("Camera scanner error:", err);
+    if (permissionStream) permissionStream.getTracks().forEach(track => track.stop());
+    if (scanner) {
+      try { await scanner.stop(); } catch {}
+      try { scanner.clear(); } catch {}
+      scanner = null;
+    }
+    const reader = document.getElementById("cameraReader");
+    if (reader) reader.innerHTML = "";
+
     scannerBox.hidden = true;
-    toast("Camera access could not be started. Check browser camera permission.", "error");
-    setBusy(e.currentTarget, false);
+    setCameraUi("idle", "Camera could not start. Tap to try again.");
+    const message =
+      err?.name === "NotAllowedError"
+        ? "Camera permission was blocked. Allow camera access for badge.ask4prayers.com and try again."
+        : err?.name === "NotFoundError"
+          ? "No usable camera was found on this device."
+          : "The camera could not start. You can retry or scan a downloaded ID instead.";
+    toast(message, "error");
   }
 }
 
@@ -656,30 +765,49 @@ async function scanDownloadedBadge(e) {
   const file = input.files?.[0];
   if (!file) return;
 
+  await stopLiveScanner();
+
   const status = document.getElementById("downloadScanStatus");
   const button = document.getElementById("chooseBadgeImage");
+  const text = document.getElementById("downloadScanText");
+
   status.hidden = false;
   status.innerHTML = "<strong>Reading downloaded badge…</strong><span>Looking for the credential QR code.</span>";
-  setBusy(button, true, "Reading ID…");
+  button.disabled = true;
+  button.classList.add("is-loading");
+  if (text) text.textContent = "Reading the saved badge image…";
 
   let fileScanner = null;
   try {
     if (!window.Html5Qrcode) throw new Error("QR scanner library is unavailable.");
-    fileScanner = new Html5Qrcode("reader");
-    const decoded = await fileScanner.scanFile(file, false);
+
+    const host = document.getElementById("fileReaderHost");
+    if (host) host.innerHTML = "";
+
+    fileScanner = new Html5Qrcode("fileReaderHost");
+    const decoded = await withTimeout(
+      fileScanner.scanFile(file, false),
+      15000,
+      "The image scan timed out."
+    );
+
     try { fileScanner.clear(); } catch {}
+    fileScanner = null;
+
     status.innerHTML = "<strong>QR code found.</strong><span>Opening live credential verification…</span>";
     const ok = await processScannedValue(decoded, "downloaded-badge");
     if (!ok) {
       status.innerHTML = "<strong>Not a valid Prayer Project badge.</strong><span>The image contained a QR code, but it was not a recognized TPP credential.</span>";
     }
   } catch (err) {
-    console.error(err);
+    console.error("Downloaded badge scan error:", err);
     try { fileScanner?.clear(); } catch {}
-    status.innerHTML = "<strong>No readable badge QR found.</strong><span>Try the original downloaded badge image, make sure the QR code is visible, or use the camera scanner.</span>";
+    status.innerHTML = "<strong>No readable badge QR found.</strong><span>Use the original downloaded badge PNG, make sure the QR code is visible, or try the camera scanner.</span>";
     toast("I couldn't read a Prayer Project badge QR code from that image.", "error");
   } finally {
-    setBusy(button, false);
+    button.disabled = false;
+    button.classList.remove("is-loading");
+    if (text) text.textContent = "Select a saved Prayer Project badge from Photos or Files.";
     input.value = "";
   }
 }
