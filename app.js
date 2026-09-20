@@ -36,8 +36,11 @@ window.addEventListener("beforeinstallprompt", e => {
 });
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js").catch(() => {});
+  navigator.serviceWorker.register("./sw.js?v=7", { updateViaCache:"none" })
+    .then(reg => reg.update().catch(() => {}))
+    .catch(() => {});
 }
+console.info("TPP Badge System build v7");
 
 navToggle.addEventListener("click", () => {
   const open = siteNav.classList.toggle("open");
@@ -678,56 +681,53 @@ async function startScanner() {
     return;
   }
 
-  if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices?.enumerateDevices) {
-    toast("This browser does not provide camera access to the scanner.", "error");
+  const scannerBox = document.getElementById("scannerBox");
+  const reader = document.getElementById("cameraReader");
+  const button = document.getElementById("startScanner");
+
+  if (!scannerBox || !reader || !button) {
+    toast("The scanner page was not ready. Refresh and try again.", "error");
     return;
   }
 
-  const scannerBox = document.getElementById("scannerBox");
   scannerBox.hidden = false;
-  setCameraUi("loading", "Requesting camera permission…");
+  reader.innerHTML = "";
+  setCameraUi("loading", "Requesting camera access…");
 
-  let permissionStream = null;
+  // Let the newly-visible camera container obtain a real layout size before
+  // html5-qrcode measures it.
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
   try {
-    permissionStream = await withTimeout(
-      navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" } }, audio:false }),
+    const cameras = await withTimeout(
+      Html5Qrcode.getCameras(),
       12000,
       "Camera permission timed out."
     );
 
-    permissionStream.getTracks().forEach(track => track.stop());
-    permissionStream = null;
-
-    setCameraUi("loading", "Finding an available camera…");
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const cameras = devices.filter(device => device.kind === "videoinput");
-    if (!cameras.length) throw new Error("No camera was found on this device.");
+    if (!Array.isArray(cameras) || !cameras.length) {
+      throw new Error("No camera was found on this device.");
+    }
 
     const preferred =
-      cameras.find(device => /back|rear|environment|world/i.test(device.label || "")) ||
+      cameras.find(camera => /back|rear|environment|world/i.test(camera.label || "")) ||
       cameras[0];
 
-    const reader = document.getElementById("cameraReader");
-    if (reader) reader.innerHTML = "";
-
-    scanner = new Html5Qrcode("cameraReader");
+    scanner = new Html5Qrcode("cameraReader", { verbose:false });
     setCameraUi("loading", "Starting live camera…");
 
+    // Do not provide a qrbox here. html5-qrcode's responsive qrbox calculation
+    // can fail on narrow/just-rendered containers. Full-frame scanning is more
+    // reliable on both desktop and mobile.
     await withTimeout(
       scanner.start(
-        preferred.deviceId,
-        {
-          fps:10,
-          qrbox:(w,h) => {
-            const side = Math.max(180, Math.min(300, Math.floor(Math.min(w,h) * .72)));
-            return { width:side, height:side };
-          },
-          aspectRatio:1.333334
-        },
+        preferred.id,
+        { fps:10, disableFlip:false },
         async decoded => {
-          try { await scanner.stop(); } catch {}
-          try { scanner.clear(); } catch {}
+          const live = scanner;
           scanner = null;
+          try { await live?.stop(); } catch {}
+          try { live?.clear(); } catch {}
           await processScannedValue(decoded, "camera-scanner");
         },
         () => {}
@@ -736,26 +736,32 @@ async function startScanner() {
       "The camera did not finish starting."
     );
 
-    setCameraUi("active", "Camera is live — hold the badge QR inside the frame.");
+    setCameraUi("active", "Camera is live — point it at the badge QR code.");
   } catch (err) {
     console.error("Camera scanner error:", err);
-    if (permissionStream) permissionStream.getTracks().forEach(track => track.stop());
-    if (scanner) {
-      try { await scanner.stop(); } catch {}
-      try { scanner.clear(); } catch {}
-      scanner = null;
-    }
-    const reader = document.getElementById("cameraReader");
-    if (reader) reader.innerHTML = "";
 
+    const live = scanner;
+    scanner = null;
+    if (live) {
+      try { await live.stop(); } catch {}
+      try { live.clear(); } catch {}
+    }
+
+    reader.innerHTML = "";
     scannerBox.hidden = true;
     setCameraUi("idle", "Camera could not start. Tap to try again.");
-    const message =
-      err?.name === "NotAllowedError"
-        ? "Camera permission was blocked. Allow camera access for badge.ask4prayers.com and try again."
-        : err?.name === "NotFoundError"
-          ? "No usable camera was found on this device."
-          : "The camera could not start. You can retry or scan a downloaded ID instead.";
+
+    let message = "The camera could not start. You can retry or scan a downloaded ID instead.";
+    const detail = String(err?.message || err || "").toLowerCase();
+
+    if (err?.name === "NotAllowedError" || detail.includes("permission") || detail.includes("notallowed")) {
+      message = "Camera permission is blocked. Allow camera access for badge.ask4prayers.com, then try again.";
+    } else if (err?.name === "NotFoundError" || detail.includes("no camera") || detail.includes("not found")) {
+      message = "No usable camera was found on this device.";
+    } else if (detail.includes("in use") || detail.includes("could not start video source")) {
+      message = "The camera is already in use by another app or browser tab.";
+    }
+
     toast(message, "error");
   }
 }
