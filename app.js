@@ -36,11 +36,11 @@ window.addEventListener("beforeinstallprompt", e => {
 });
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js?v=7", { updateViaCache:"none" })
+  navigator.serviceWorker.register("./sw.js?v=8", { updateViaCache:"none" })
     .then(reg => reg.update().catch(() => {}))
     .catch(() => {});
 }
-console.info("TPP Badge System build v7");
+console.info("TPP Badge System build v8");
 
 navToggle.addEventListener("click", () => {
   const open = siteNav.classList.toggle("open");
@@ -849,6 +849,17 @@ async function renderVerification(token) {
   const title = status === "active" ? "BADGE VERIFIED" : status.toUpperCase();
   const reason = ["revoked","lost","stolen"].includes(status) && badge.publicRevocationReason
     ? '<div class="verify-reason"><strong>Reason</strong>' + esc(badge.publicRevocationReason) + '</div>' : "";
+
+  const suspensionInfo = status === "suspended"
+    ? '<div class="verify-suspension">' +
+        '<strong>Credential suspended</strong>' +
+        '<div class="verify-info-row"><span>Category</span><b>' + esc(badge.suspensionCategory || "Administrative Suspension") + '</b></div>' +
+        '<div class="verify-info-row"><span>Reason</span><b>' + esc(badge.publicSuspensionReason || "This credential is temporarily suspended.") + '</b></div>' +
+        (badge.suspendedAt ? '<div class="verify-info-row"><span>Suspended</span><b>' + formatDate(badge.suspendedAt,true) + '</b></div>' : '') +
+        (badge.suspensionReviewDate ? '<div class="verify-info-row"><span>Review / reinstatement</span><b>' + formatDate(badge.suspensionReviewDate) + '</b></div>' : '') +
+      '</div>'
+    : "";
+
   appEl.innerHTML = `
     <section class="verify-shell">
       <div class="verify-card ${cls}">
@@ -858,6 +869,7 @@ async function renderVerification(token) {
         <p>${esc(badge.title || badge.credentialType || "Prayer Project Credential")}</p>
         <div class="button-row" style="justify-content:center">${statusPill(status)}</div>
         ${reason}
+        ${suspensionInfo}
         <div class="detail-list" style="margin-top:24px;text-align:left">
           <div class="detail-row"><span>TPP ID</span><strong>${esc(badge.tppId || "—")}</strong></div>
           <div class="detail-row"><span>Badge ID</span><strong>${esc(badge.badgeId)}</strong></div>
@@ -1040,6 +1052,12 @@ async function renderAdminBadge(badgeId) {
           <div class="detail-row"><span>Issued</span><strong>${formatDate(badge.issuedAt)}</strong></div>
           <div class="detail-row"><span>Expires</span><strong>${badge.expiresAt ? formatDate(badge.expiresAt) : "No set expiration"}</strong></div>
           ${badge.publicRevocationReason ? '<div class="detail-row"><span>Revocation reason</span><strong>' + esc(badge.publicRevocationReason) + '</strong></div>' : ""}
+          ${badge.suspensionCategory ? '<div class="detail-row"><span>Suspension category</span><strong>' + esc(badge.suspensionCategory) + '</strong></div>' : ""}
+          ${badge.publicSuspensionReason ? '<div class="detail-row"><span>Suspension reason</span><strong>' + esc(badge.publicSuspensionReason) + '</strong></div>' : ""}
+          ${badge.suspendedAt ? '<div class="detail-row"><span>Suspended</span><strong>' + formatDate(badge.suspendedAt,true) + '</strong></div>' : ""}
+          ${badge.suspensionReviewDate ? '<div class="detail-row"><span>Review / reinstatement date</span><strong>' + formatDate(badge.suspensionReviewDate) + '</strong></div>' : ""}
+          ${badge.internalSuspensionNotes ? '<div class="detail-row"><span>Internal suspension notes</span><strong>' + esc(badge.internalSuspensionNotes) + '</strong></div>' : ""}
+          ${badge.suspensionEndedAt ? '<div class="detail-row"><span>Suspension ended</span><strong>' + formatDate(badge.suspensionEndedAt,true) + '</strong></div>' : ""}
         </div>
         <div class="button-row">
           <button class="btn btn-secondary" id="adminDownload">Download</button>
@@ -1062,9 +1080,9 @@ async function renderAdminBadge(badgeId) {
   const revoke = document.getElementById("revokeBadge");
   if (revoke) revoke.onclick = () => showRevokeModal(badge);
   const suspend = document.getElementById("suspendBadge");
-  if (suspend) suspend.onclick = () => changeBadgeStatus(badge, "suspended");
+  if (suspend) suspend.onclick = () => showSuspendModal(badge);
   const restore = document.getElementById("restoreBadge");
-  if (restore) restore.onclick = () => changeBadgeStatus(badge, "active");
+  if (restore) restore.onclick = () => restoreSuspendedBadge(badge);
   const replace = document.getElementById("replaceBadge");
   if (replace) replace.onclick = () => replaceBadge(badge);
 }
@@ -1104,15 +1122,124 @@ function showRevokeModal(badge) {
   });
 }
 
-async function changeBadgeStatus(badge, status) {
+function showSuspendModal(badge) {
+  showModal("Suspend Badge", `
+    <p>A suspension is temporary and has its own public record. The category, public reason, suspension date, and review date (when supplied) will be shown whenever the badge is scanned while suspended.</p>
+    <form id="suspendForm">
+      <div class="field">
+        <label for="suspensionCategory">Suspension category</label>
+        <select class="select" id="suspensionCategory" required>
+          <option value="">Choose a category</option>
+          <option>Administrative Review</option>
+          <option>Temporary Restriction</option>
+          <option>Policy / Conduct Review</option>
+          <option>Credential Issue</option>
+          <option>Role / Authorization Review</option>
+          <option>Other</option>
+        </select>
+      </div>
+
+      <div class="field" style="margin-top:14px">
+        <label for="suspensionReason">Public suspension reason</label>
+        <textarea class="textarea" id="suspensionReason" required placeholder="This reason will be shown whenever the suspended badge is scanned."></textarea>
+        <small>Keep this factual and appropriate for public display.</small>
+      </div>
+
+      <div class="field" style="margin-top:14px">
+        <label for="suspensionReviewDate">Review / expected reinstatement date (optional)</label>
+        <input class="input" id="suspensionReviewDate" type="date">
+      </div>
+
+      <div class="field" style="margin-top:14px">
+        <label for="suspensionInternalNotes">Internal administrative notes (optional)</label>
+        <textarea class="textarea" id="suspensionInternalNotes" placeholder="Visible only in the Badge System administration area."></textarea>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn btn-quiet" data-close-modal>Cancel</button>
+        <button class="btn btn-danger" type="submit">Suspend Badge</button>
+      </div>
+    </form>`);
+
+  document.getElementById("suspendForm").addEventListener("submit", async e => {
+    e.preventDefault();
+
+    const category = document.getElementById("suspensionCategory").value;
+    const reason = document.getElementById("suspensionReason").value.trim();
+    const reviewDate = document.getElementById("suspensionReviewDate").value || null;
+    const internalNotes = document.getElementById("suspensionInternalNotes").value.trim() || null;
+
+    if (!category) return toast("Choose a suspension category.", "error");
+    if (!reason) return toast("A public suspension reason is required.", "error");
+
+    setBusy(e.submitter, true, "Suspending…");
+
+    try {
+      const batch = writeBatch(db);
+
+      batch.update(doc(db, "badges", badge.badgeId), {
+        status:"suspended",
+        suspensionActive:true,
+        suspensionCategory:category,
+        publicSuspensionReason:reason,
+        suspensionReviewDate:reviewDate,
+        internalSuspensionNotes:internalNotes,
+        suspendedAt:serverTimestamp(),
+        suspendedBy:session.user.uid,
+        suspensionEndedAt:null,
+        suspensionRestoredBy:null,
+        updatedAt:serverTimestamp(),
+        updatedBy:session.user.uid
+      });
+
+      batch.update(doc(db, "publicCredentials", badge.credentialToken), {
+        status:"suspended",
+        suspensionActive:true,
+        suspensionCategory:category,
+        publicSuspensionReason:reason,
+        suspensionReviewDate:reviewDate,
+        suspendedAt:serverTimestamp(),
+        suspensionEndedAt:null
+      });
+
+      await batch.commit();
+      closeModal();
+      toast("Badge suspended. The suspension information will now appear on scans.");
+      route();
+    } catch (err) {
+      toast(friendlyError(err), "error");
+      setBusy(e.submitter, false);
+    }
+  });
+}
+
+async function restoreSuspendedBadge(badge) {
+  if (!confirm("Restore this badge to ACTIVE status? The suspension record will remain in the administrative history.")) return;
+
   try {
     const batch = writeBatch(db);
-    batch.update(doc(db, "badges", badge.badgeId), { status, updatedAt:serverTimestamp(), updatedBy:session.user.uid });
-    batch.update(doc(db, "publicCredentials", badge.credentialToken), { status });
+
+    batch.update(doc(db, "badges", badge.badgeId), {
+      status:"active",
+      suspensionActive:false,
+      suspensionEndedAt:serverTimestamp(),
+      suspensionRestoredBy:session.user.uid,
+      updatedAt:serverTimestamp(),
+      updatedBy:session.user.uid
+    });
+
+    batch.update(doc(db, "publicCredentials", badge.credentialToken), {
+      status:"active",
+      suspensionActive:false,
+      suspensionEndedAt:serverTimestamp()
+    });
+
     await batch.commit();
-    toast(status === "active" ? "Badge restored." : "Badge suspended.");
+    toast("Badge restored to active status.");
     route();
-  } catch (err) { toast(friendlyError(err), "error"); }
+  } catch (err) {
+    toast(friendlyError(err), "error");
+  }
 }
 
 async function replaceBadge(badge) {
@@ -1128,6 +1255,9 @@ async function replaceBadge(badge) {
     const newPrivate = {
       ...badge, badgeId:newBadgeId, credentialToken:newToken, status:"active",
       issuedAt, publicRevocationReason:null, revocationCategory:null,
+      suspensionActive:false, suspensionCategory:null, publicSuspensionReason:null,
+      suspensionReviewDate:null, internalSuspensionNotes:null, suspendedAt:null,
+      suspendedBy:null, suspensionEndedAt:null, suspensionRestoredBy:null,
       replacedBadgeId:badge.badgeId, createdBy:session.user.uid, createdAt:serverTimestamp(),
       revokedAt:deleteField(), revokedBy:deleteField()
     };
@@ -1135,7 +1265,9 @@ async function replaceBadge(badge) {
     const newPublic = {
       badgeId:newBadgeId, credentialToken:newToken, fullName:badge.fullName, title:badge.title,
       tppId:badge.tppId, credentialType:badge.credentialType, status:"active",
-      issuedAt, expiresAt:badge.expiresAt || null, publicRevocationReason:null
+      issuedAt, expiresAt:badge.expiresAt || null, publicRevocationReason:null,
+      suspensionActive:false, suspensionCategory:null, publicSuspensionReason:null,
+      suspensionReviewDate:null, suspendedAt:null, suspensionEndedAt:null
     };
     const batch = writeBatch(db);
     batch.update(doc(db, "badges", badge.badgeId), {
