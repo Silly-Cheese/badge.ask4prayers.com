@@ -555,7 +555,7 @@ function printCredential(badge, token) {
 
 async function renderScanner() {
   appEl.innerHTML = `
-    ${pageHead("Credential Scanner","Scan a Prayer Project badge","Use a phone camera to read an official badge QR code. Every completed verification is written to the scan log.")}
+    ${pageHead("Credential Scanner","Scan a Prayer Project badge","Use the camera or select a downloaded badge image from your phone. Every completed verification is written to the scan log.")}
     <section class="scanner-wrap">
       <div class="panel">
         <div class="field">
@@ -570,16 +570,65 @@ async function renderScanner() {
             <option>Administrative</option>
           </select>
         </div>
-        <div class="scanner-box" style="margin-top:16px"><div id="reader"></div></div>
-        <p class="scan-help">Camera permission is used only for live QR scanning in your browser. No photos of people are collected or stored.</p>
-        <div class="button-row"><button class="btn btn-primary" id="startScanner">Start Camera Scanner</button></div>
+
+        <div class="scan-method-grid">
+          <button class="scan-method-card" id="startScanner" type="button">
+            <span class="scan-method-icon">⌁</span>
+            <strong>Camera Scan</strong>
+            <small>Scan a badge being shown in front of you.</small>
+          </button>
+
+          <button class="scan-method-card" id="chooseBadgeImage" type="button">
+            <span class="scan-method-icon">▣</span>
+            <strong>Downloaded ID</strong>
+            <small>Select a saved Prayer Project badge from Photos or Files.</small>
+          </button>
+        </div>
+
+        <input id="badgeImageInput" type="file" accept="image/*" hidden>
+
+        <div class="scanner-box" id="scannerBox" hidden>
+          <div id="reader"></div>
+        </div>
+
+        <div class="download-scan-status" id="downloadScanStatus" hidden></div>
+
+        <p class="scan-help">Downloaded badge images are read locally in your browser to find the QR code. The image itself is not uploaded or stored. Only the resulting verification event is written to the scan log.</p>
       </div>
     </section>`;
+
   document.getElementById("startScanner").onclick = startScanner;
+  document.getElementById("chooseBadgeImage").onclick = () => {
+    document.getElementById("badgeImageInput").click();
+  };
+  document.getElementById("badgeImageInput").addEventListener("change", scanDownloadedBadge);
+}
+
+function currentScanPurpose() {
+  return document.getElementById("scanPurpose")?.value || "Identity Verification";
+}
+
+async function processScannedValue(decoded, source) {
+  const token = extractToken(decoded);
+  if (!token) {
+    await logScan(null, "invalid", source, currentScanPurpose(), String(decoded || "").slice(0,120));
+    toast("That QR code is not a Prayer Project badge.", "error");
+    return false;
+  }
+
+  sessionStorage.setItem("tppScanContext", JSON.stringify({
+    purpose:currentScanPurpose(),
+    scannerUid:session.profile?.role === "admin" ? session.user?.uid : null,
+    source
+  }));
+  location.hash = "#/verify/" + encodeURIComponent(token);
+  return true;
 }
 
 async function startScanner(e) {
   if (!window.Html5Qrcode) return toast("The camera scanner failed to load.", "error");
+  const scannerBox = document.getElementById("scannerBox");
+  scannerBox.hidden = false;
   setBusy(e.currentTarget, true, "Starting camera…");
   try {
     scanner = new Html5Qrcode("reader");
@@ -589,29 +638,49 @@ async function startScanner(e) {
       async decoded => {
         try { await scanner.stop(); } catch {}
         scanner = null;
-        const token = extractToken(decoded);
-        if (!token) {
-          sessionStorage.setItem("tppScanContext", JSON.stringify({
-            purpose:document.getElementById("scanPurpose")?.value || "Identity Verification",
-            invalid:true
-          }));
-          await logScan(null, "invalid", "internal-scanner", null, decoded.slice(0,120));
-          toast("That QR code is not a Prayer Project badge.", "error");
-          return route();
-        }
-        sessionStorage.setItem("tppScanContext", JSON.stringify({
-          purpose:document.getElementById("scanPurpose")?.value || "Identity Verification",
-          scannerUid:session.profile?.role === "admin" ? session.user?.uid : null,
-          source:"internal-scanner"
-        }));
-        location.hash = "#/verify/" + encodeURIComponent(token);
+        await processScannedValue(decoded, "camera-scanner");
       }
     );
-    e.currentTarget.style.display = "none";
+    e.currentTarget.dataset.oldText = "Camera Scan";
+    e.currentTarget.disabled = true;
   } catch (err) {
     console.error(err);
+    scannerBox.hidden = true;
     toast("Camera access could not be started. Check browser camera permission.", "error");
     setBusy(e.currentTarget, false);
+  }
+}
+
+async function scanDownloadedBadge(e) {
+  const input = e.currentTarget;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  const status = document.getElementById("downloadScanStatus");
+  const button = document.getElementById("chooseBadgeImage");
+  status.hidden = false;
+  status.innerHTML = "<strong>Reading downloaded badge…</strong><span>Looking for the credential QR code.</span>";
+  setBusy(button, true, "Reading ID…");
+
+  let fileScanner = null;
+  try {
+    if (!window.Html5Qrcode) throw new Error("QR scanner library is unavailable.");
+    fileScanner = new Html5Qrcode("reader");
+    const decoded = await fileScanner.scanFile(file, false);
+    try { fileScanner.clear(); } catch {}
+    status.innerHTML = "<strong>QR code found.</strong><span>Opening live credential verification…</span>";
+    const ok = await processScannedValue(decoded, "downloaded-badge");
+    if (!ok) {
+      status.innerHTML = "<strong>Not a valid Prayer Project badge.</strong><span>The image contained a QR code, but it was not a recognized TPP credential.</span>";
+    }
+  } catch (err) {
+    console.error(err);
+    try { fileScanner?.clear(); } catch {}
+    status.innerHTML = "<strong>No readable badge QR found.</strong><span>Try the original downloaded badge image, make sure the QR code is visible, or use the camera scanner.</span>";
+    toast("I couldn't read a Prayer Project badge QR code from that image.", "error");
+  } finally {
+    setBusy(button, false);
+    input.value = "";
   }
 }
 
