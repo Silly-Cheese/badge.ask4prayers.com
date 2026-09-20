@@ -303,3 +303,70 @@ body:after{
   .hero-copy{padding:30px 24px!important}
   .hero h1{font-size:clamp(2.7rem,13vw,4.4rem)!important}
 }
+
+/* Downloaded badge scanning */
+.scan-method-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  margin-top:18px;
+}
+.scan-method-card{
+  min-height:150px;
+  padding:20px;
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:22px;
+  background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.03));
+  color:var(--text);
+  text-align:left;
+  cursor:pointer;
+  transition:transform .16s ease,border-color .16s ease,background .16s ease;
+}
+.scan-method-card:hover{
+  transform:translateY(-1px);
+  border-color:rgba(216,195,165,.32);
+  background:rgba(216,195,165,.065);
+}
+.scan-method-card:disabled{
+  opacity:.58;
+  cursor:wait;
+  transform:none;
+}
+.scan-method-icon{
+  display:grid;
+  place-items:center;
+  width:42px;
+  height:42px;
+  margin-bottom:17px;
+  border:1px solid rgba(216,195,165,.25);
+  border-radius:50%;
+  background:rgba(216,195,165,.08);
+  color:var(--accent2);
+  font-size:1.15rem;
+}
+.scan-method-card strong{
+  display:block;
+  margin-bottom:6px;
+  font-size:1rem;
+}
+.scan-method-card small{
+  display:block;
+  color:var(--muted);
+  line-height:1.5;
+}
+#scannerBox{margin-top:18px}
+.download-scan-status{
+  display:grid;
+  gap:4px;
+  margin-top:16px;
+  padding:15px 16px;
+  border:1px solid rgba(216,195,165,.18);
+  border-radius:17px;
+  background:rgba(216,195,165,.06);
+}
+.download-scan-status strong{color:var(--text)}
+.download-scan-status span{color:var(--muted);font-size:.88rem;line-height:1.5}
+@media(max-width:560px){
+  .scan-method-grid{grid-template-columns:1fr}
+  .scan-method-card{min-height:126px}
+}
