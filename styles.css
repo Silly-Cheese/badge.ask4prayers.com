@@ -422,3 +422,34 @@ body:after{
   .scanner-stop{width:100%!important}
   #cameraReader{min-height:220px}
 }
+
+/* Suspension verification */
+.verify-suspension{
+  margin-top:22px;
+  padding:18px;
+  border:1px solid rgba(255,224,168,.28);
+  border-radius:18px;
+  background:rgba(255,224,168,.07);
+  text-align:left;
+}
+.verify-suspension>strong{
+  display:block;
+  margin-bottom:12px;
+  color:#ffe0a8;
+  font-size:.82rem;
+  letter-spacing:.09em;
+  text-transform:uppercase;
+}
+.verify-info-row{
+  display:grid;
+  grid-template-columns:minmax(110px,.42fr) minmax(0,1fr);
+  gap:14px;
+  padding:10px 0;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+.verify-info-row:first-of-type{border-top:0}
+.verify-info-row span{color:var(--muted);font-size:.86rem}
+.verify-info-row b{color:var(--text);font-size:.9rem;line-height:1.5}
+@media(max-width:560px){
+  .verify-info-row{grid-template-columns:1fr;gap:4px}
+}
