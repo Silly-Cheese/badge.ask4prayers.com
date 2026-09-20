@@ -413,6 +413,7 @@ async function bootstrapAdmin(e) {
   const pin = document.getElementById("bootPin").value;
   const confirm = document.getElementById("bootConfirm").value;
   const setupCode = document.getElementById("bootCode").value.trim();
+  const setupCodeHash = await sha256(setupCode);
   if (!isPin(pin)) return toast("PIN must be exactly four digits.", "error");
   if (pin !== confirm) return toast("The PINs do not match.", "error");
   const hash = await sha256(normalizeName(name));
@@ -429,8 +430,8 @@ async function bootstrapAdmin(e) {
       ownerUid:cred.user.uid, initializedAt:serverTimestamp(), setupCodeHash
     });
     await batch.commit();
-    await updateDoc(doc(db, "users", cred.user.uid), { setupCode:deleteField() });
-    await updateDoc(doc(db, "system", "bootstrap"), { setupCode:deleteField() });
+    await updateDoc(doc(db, "users", cred.user.uid), { setupCodeHash:deleteField() });
+    await updateDoc(doc(db, "system", "bootstrap"), { setupCodeHash:deleteField() });
     session.user = cred.user;
     session.profile = { displayName:name, role:"admin", nameHash:hash };
     toast("Administrator created. The Badge System is initialized.");
