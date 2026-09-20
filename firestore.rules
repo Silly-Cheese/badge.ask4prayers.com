@@ -1,6 +1,6 @@
 // BADGE SYSTEM FIRESTORE RULES
 // COPY THIS ENTIRE FILE INTO FIREBASE > FIRESTORE DATABASE > RULES
-// Version: 2026-09-19 22:07 CT
+// Version: 2026-09-19 22:31 CT
 
 rules_version = '2';
 
@@ -93,10 +93,7 @@ service cloud.firestore {
     match /scanLogs/{scanId} {
       allow read: if isAdmin();
 
-      allow create: if request.resource.data.scannedAt == request.time &&
-        request.resource.data.result != null &&
-        request.resource.data.source != null &&
-        request.resource.data.purpose != null;
+      allow create: if request.resource.data.scannedAt == request.time;
 
       allow update, delete: if false;
     }
