@@ -82,7 +82,9 @@ service cloud.firestore {
       allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow list: if isAdmin();
 
-      allow create: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn()
+        && request.auth.uid == uid;
+
       allow update: if isAdmin();
       allow delete: if false;
     }
@@ -90,9 +92,9 @@ service cloud.firestore {
     match /scanLogs/{scanId} {
       allow get, list: if isAdmin();
 
-      allow create: if request.resource.data.result != null
-        && request.resource.data.source != null
-        && request.resource.data.purpose != null
+      allow create: if request.resource.data.result is string
+        && request.resource.data.source is string
+        && request.resource.data.purpose is string
         && request.resource.data.scannedAt == request.time;
 
       allow update, delete: if false;
