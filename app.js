@@ -167,7 +167,7 @@ function qrInto(element, text, size = 256) {
   }
   new QRCode(element, {
     text, width:size, height:size,
-    colorDark:"#07111f", colorLight:"#ffffff",
+    colorDark:"#0a0907", colorLight:"#ffffff",
     correctLevel: QRCode.CorrectLevel.H
   });
 }
@@ -526,7 +526,7 @@ async function downloadBadgeImage(elementId, badge) {
   const el = document.getElementById(elementId);
   if (!window.html2canvas || !el) return toast("Badge download is unavailable.", "error");
   toast("Preparing badge image…");
-  const canvas = await html2canvas(el, { backgroundColor:"#081522", scale:2, useCORS:true });
+  const canvas = await html2canvas(el, { backgroundColor:"#d8c29d", scale:2, useCORS:true });
   const link = document.createElement("a");
   link.download = (badge.fullName || "TPP-Badge").replace(/[^a-z0-9]+/gi, "-") + "-Badge.png";
   link.href = canvas.toDataURL("image/png");
