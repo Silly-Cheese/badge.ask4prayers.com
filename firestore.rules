@@ -13,7 +13,6 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
     }
 
-    // One-time initial administrator bootstrap.
     match /system/{documentId} {
       allow get, list: if isAdmin();
 
@@ -21,15 +20,12 @@ service cloud.firestore {
         && signedIn()
         && !exists(/databases/$(database)/documents/system/bootstrap)
         && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.setupCodeHash == "be03b9d3bd03a138cb3435a0fbfac040d53c7021508e002f1eb8c36cee38941e"
-        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin"
-        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.setupCodeHash == "be03b9d3bd03a138cb3435a0fbfac040d53c7021508e002f1eb8c36cee38941e";
+        && request.resource.data.setupCodeHash == "be03b9d3bd03a138cb3435a0fbfac040d53c7021508e002f1eb8c36cee38941e";
 
       allow update: if isAdmin();
       allow delete: if false;
     }
 
-    // Authentication profiles.
     match /users/{uid} {
       allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow list: if isAdmin();
@@ -37,17 +33,12 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.auth.uid == uid
         && (
-          (
-            request.resource.data.role == "holder"
-            && getAfter(/databases/$(database)/documents/badgeOwners/$(uid)).data.badgeId is string
-          )
+          request.resource.data.role == "holder"
           ||
           (
             request.resource.data.role == "admin"
             && !exists(/databases/$(database)/documents/system/bootstrap)
             && request.resource.data.setupCodeHash == "be03b9d3bd03a138cb3435a0fbfac040d53c7021508e002f1eb8c36cee38941e"
-            && getAfter(/databases/$(database)/documents/system/bootstrap).data.ownerUid == uid
-            && getAfter(/databases/$(database)/documents/system/bootstrap).data.setupCodeHash == "be03b9d3bd03a138cb3435a0fbfac040d53c7021508e002f1eb8c36cee38941e"
           )
         );
 
@@ -55,13 +46,11 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Full administrative badge records.
     match /badges/{badgeId} {
       allow get, list, create, update: if isAdmin();
       allow delete: if false;
     }
 
-    // Limited credential data used by QR verification.
     match /publicCredentials/{credentialToken} {
       allow get: if true;
       allow list: if false;
@@ -69,7 +58,6 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Exact-name lookup used for badge-holder first login.
     match /accessDirectory/{nameHash} {
       allow get: if true;
       allow list: if false;
@@ -82,38 +70,29 @@ service cloud.firestore {
           && request.auth.token.email == resource.data.authEmail
           && request.resource.data.claimed == true
           && request.resource.data.ownerUid == request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            "claimed",
-            "ownerUid",
-            "claimedAt"
-          ])
+          && request.resource.data.authEmail == resource.data.authEmail
+          && request.resource.data.badgeId == resource.data.badgeId
+          && request.resource.data.credentialToken == resource.data.credentialToken
         );
 
       allow delete: if false;
     }
 
-    // Links an authenticated holder account to its current credential.
     match /badgeOwners/{uid} {
       allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow list: if isAdmin();
 
-      allow create: if signedIn()
-        && request.auth.uid == uid
-        && getAfter(/databases/$(database)/documents/accessDirectory/$(request.resource.data.nameHash)).data.ownerUid == uid
-        && getAfter(/databases/$(database)/documents/accessDirectory/$(request.resource.data.nameHash)).data.badgeId == request.resource.data.badgeId
-        && getAfter(/databases/$(database)/documents/accessDirectory/$(request.resource.data.nameHash)).data.credentialToken == request.resource.data.credentialToken;
-
+      allow create: if signedIn() && request.auth.uid == uid;
       allow update: if isAdmin();
       allow delete: if false;
     }
 
-    // Every verification may append a scan event. Only admins can read logs.
     match /scanLogs/{scanId} {
       allow get, list: if isAdmin();
 
-      allow create: if request.resource.data.result is string
-        && request.resource.data.source is string
-        && request.resource.data.purpose is string
+      allow create: if request.resource.data.result != null
+        && request.resource.data.source != null
+        && request.resource.data.purpose != null
         && request.resource.data.scannedAt == request.time;
 
       allow update, delete: if false;
