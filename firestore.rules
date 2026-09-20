@@ -1,101 +1,125 @@
 // BADGE SYSTEM FIRESTORE RULES
-// COPY THIS ENTIRE FILE INTO FIREBASE > FIRESTORE DATABASE > RULES
-// Version: 2026-09-19 22:38 CT
+// MINIMAL COMPILER-SAFE VERSION
+// Version: 2026-09-19 22:55 CT
 
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function signedIn() {
-      return request.auth != null;
-    }
-
-    function isAdmin() {
-      return signedIn() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
-    }
-
     match /system/{documentId} {
-      allow read: if isAdmin();
+      allow create: if request.auth != null
+        && documentId == 'bootstrap'
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.setupCodeHash == 'be03b9d3bd03a138cb3435a0fbfac040d53c7021508e002f1eb8c36cee38941e';
 
-      allow create: if documentId == "bootstrap" &&
-        signedIn() &&
-        !exists(/databases/$(database)/documents/system/bootstrap) &&
-        request.resource.data.ownerUid == request.auth.uid &&
-        request.resource.data.setupCodeHash == "be03b9d3bd03a138cb3435a0fbfac040d53c7021508e002f1eb8c36cee38941e";
+      allow read: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
 
-      allow update: if isAdmin();
+      allow update: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+
       allow delete: if false;
     }
 
     match /users/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow get: if request.auth != null
+        && request.auth.uid == uid;
 
-      allow create: if signedIn() &&
-        request.auth.uid == uid &&
-        (
-          request.resource.data.role == "holder" ||
+      allow list: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && (
+          request.resource.data.role == 'holder'
+          ||
           (
-            request.resource.data.role == "admin" &&
-            !exists(/databases/$(database)/documents/system/bootstrap) &&
-            request.resource.data.setupCodeHash == "be03b9d3bd03a138cb3435a0fbfac040d53c7021508e002f1eb8c36cee38941e"
+            request.resource.data.role == 'admin'
+            && !exists(/databases/$(database)/documents/system/bootstrap)
+            && request.resource.data.setupCodeHash == 'be03b9d3bd03a138cb3435a0fbfac040d53c7021508e002f1eb8c36cee38941e'
           )
         );
 
-      allow update: if isAdmin();
+      allow update: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+
       allow delete: if false;
     }
 
     match /badges/{badgeId} {
-      allow read, create, update: if isAdmin();
+      allow get: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+
+      allow list: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+
+      allow create: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+
+      allow update: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+
       allow delete: if false;
     }
 
     match /publicCredentials/{credentialToken} {
       allow get: if true;
       allow list: if false;
-      allow create, update: if isAdmin();
+
+      allow create: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+
+      allow update: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+
       allow delete: if false;
     }
 
     match /accessDirectory/{nameHash} {
       allow get: if true;
       allow list: if false;
-      allow create: if isAdmin();
 
-      allow update: if isAdmin() || (
-        signedIn() &&
-        resource.data.claimed == false &&
-        request.auth.token.email == resource.data.authEmail &&
-        request.resource.data.claimed == true &&
-        request.resource.data.ownerUid == request.auth.uid
-      );
+      allow create: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+
+      allow update: if request.auth != null
+        && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+          ||
+          request.resource.data.ownerUid == request.auth.uid
+        );
 
       allow delete: if false;
     }
 
     match /badgeOwners/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow get: if request.auth != null
+        && request.auth.uid == uid;
 
-      allow create: if signedIn() &&
-        request.auth.uid == uid &&
-        get(/databases/$(database)/documents/accessDirectory/$(request.resource.data.nameHash)).data.claimed == false &&
-        request.auth.token.email == get(/databases/$(database)/documents/accessDirectory/$(request.resource.data.nameHash)).data.authEmail &&
-        request.resource.data.badgeId == get(/databases/$(database)/documents/accessDirectory/$(request.resource.data.nameHash)).data.badgeId &&
-        request.resource.data.credentialToken == get(/databases/$(database)/documents/accessDirectory/$(request.resource.data.nameHash)).data.credentialToken;
+      allow list: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
 
-      allow update: if isAdmin();
+      allow create: if request.auth != null
+        && request.auth.uid == uid;
+
+      allow update: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+
       allow delete: if false;
     }
 
     match /scanLogs/{scanId} {
-      allow read: if isAdmin();
+      allow create: if true;
 
-      allow create: if request.resource.data.scannedAt == request.time;
+      allow get: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
 
-      allow update, delete: if false;
+      allow list: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+
+      allow update: if false;
+      allow delete: if false;
     }
   }
 }
